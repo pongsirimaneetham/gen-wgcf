@@ -1,8 +1,42 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 cd ~
+DOWNLOAD_DIR="/storage/emulated/0/Download"
 
-# รับค่าจำนวนครั้งจากคำสั่ง (ถ้าไม่ใส่ตัวเลข จะตั้งค่าเริ่มต้นเป็น 1 ครั้ง)
+# ==========================================
+# โหมดเปลี่ยนชื่อไฟล์: gen rename <ชื่อใหม่>
+# ==========================================
+if [ "$1" == "rename" ] || [ "$1" == "rn" ]; then
+    NEW_PREFIX=${2:-warp}
+    
+    # เช็กว่ามีไฟล์ที่ขึ้นต้นด้วย wgcf ใน Download หรือไม่
+    shopt -s nullglob
+    FILES=("$DOWNLOAD_DIR"/wgcf*.conf)
+    
+    if [ ${#FILES[@]} -eq 0 ]; then
+        echo "⚠️ ไม่พบไฟล์ที่ขึ้นต้นด้วย wgcf ในโฟลเดอร์ Download"
+        exit 0
+    fi
+
+    echo "🔄 กำลังเปลี่ยนชื่อไฟล์ wgcf ทั้งหมดเป็น '${NEW_PREFIX}-...' "
+    INDEX=1
+    for FILE in "${FILES[@]}"; do
+        # ป้องกันการตั้งชื่อทับไฟล์ที่มีอยู่แล้ว
+        while [ -f "$DOWNLOAD_DIR/${NEW_PREFIX}-${INDEX}.conf" ]; do
+            ((INDEX++))
+        done
+        
+        mv "$FILE" "$DOWNLOAD_DIR/${NEW_PREFIX}-${INDEX}.conf"
+        echo "✅ เปลี่ยนชื่อ: $(basename "$FILE") -> ${NEW_PREFIX}-${INDEX}.conf"
+        ((INDEX++))
+    done
+    echo "🎉 เปลี่ยนชื่อไฟล์ทั้งหมดเรียบร้อยแล้ว!"
+    exit 0
+fi
+
+# ==========================================
+# โหมดเจนไฟล์ปกติ: gen หรือ gen <จำนวนครั้ง>
+# ==========================================
 COUNT=${1:-1}
 
 # 1. เช็กและติดตั้งเครื่องมือพื้นฐาน + ใบรับรอง SSL
@@ -12,7 +46,7 @@ if ! command -v proot &> /dev/null || ! command -v wget &> /dev/null || [ ! -f "
     pkg install proot wget ca-certificates -y
 fi
 
-# 2. เช็กว่ามีตัวรัน wgcf หรือยัง ถ้าไม่มีให้ดาวน์โหลด
+# 2. เช็กว่ามีตัวรัน wgcf หรือยัง ถ้าไม่มีให้ดาวน์โหลด (v2.3.1)
 if [ ! -f "$HOME/wgcf" ]; then
     echo "📥 กำลังดาวน์โหลด wgcf v2.3.1..."
     wget -q --show-progress -O wgcf https://github.com/ViRb3/wgcf/releases/download/v2.3.1/wgcf_2.3.1_linux_arm64
@@ -43,11 +77,10 @@ do
     termux-chroot ./wgcf register --accept-tos
     termux-chroot ./wgcf generate
 
-    # ตั้งชื่อไฟล์ตามวันเวลา + ลำดับรอบ เพื่อไม่ให้ชื่อไฟล์ซ้ำกัน
     FILE_NAME="wgcf-$(date +%Y%m%d_%H%M%S)_${i}.conf"
     
     if [ -f "wgcf-profile.conf" ]; then
-        cp wgcf-profile.conf "/storage/emulated/0/Download/$FILE_NAME"
+        cp wgcf-profile.conf "$DOWNLOAD_DIR/$FILE_NAME"
         echo "✅ [รอบที่ $i/$COUNT] สำเร็จ! บันทึกไฟล์ $FILE_NAME เรียบร้อย"
     else
         echo "❌ [รอบที่ $i/$COUNT] ล้มเหลว: สร้างไฟล์ไม่สำเร็จ (อาจติด Rate Limit จาก Cloudflare)"
@@ -55,7 +88,6 @@ do
         break
     fi
 
-    # หน่วงเวลา 2 วินาทีก่อนเริ่มรอบถัดไป เพื่อลดโอกาสโดน Cloudflare บล็อก
     if [ $i -lt $COUNT ]; then
         echo "⏳ รอ 2 วินาทีก่อนเริ่มรอบถัดไป..."
         sleep 2
